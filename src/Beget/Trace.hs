@@ -12,7 +12,7 @@ where
 import Beget.Hash (BegetHash (..), begetHash)
 import Beget.Value (Value)
 import Codec.Serialise (Serialise, deserialise, serialise)
-import Control.Exception (assert)
+import Control.Exception (assert, onException)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.ByteString.Lazy (LazyByteString)
 import Data.Foldable (for_)
@@ -23,7 +23,6 @@ import Data.String.Interpolate (iii)
 import Data.Traversable (for)
 import Database.SQLite.Simple qualified as SQLite
 import GHC.Generics (Generic)
-import UnliftIO.Exception (onException)
 
 data Trace k v = Trace
   { key :: k

@@ -39,14 +39,10 @@ library
   hs-source-dirs: src
   build-depends:
     , ChibiHash
-    , aeson
-    , annotated-exception
+    , async
     , bytestring
     , constraints
-    , filepath
     , hashable
-    , optparse-applicative
-    , resourcet
     , serialise
     , some-dict-of
     , sqlite-simple
@@ -54,12 +50,8 @@ library
     , string-interpolate
     , template-haskell
     , transformers
-    , typed-process
-    , unliftio
     , unordered-containers
     , varargs
-    , xdg-basedir
-    , yaml
   exposed-modules:
     , Beget.Build
     , Beget.Build.Dynamic
@@ -77,21 +69,17 @@ test-suite test
   main-is: Driver.hs
   hs-source-dirs: test
   build-depends:
-    , annotated-exception
     , beget
     , bytestring
     , hashable
-    , hedgehog
     , serialise
     , sqlite-simple
     , stm
     , tasty
     , tasty-discover
-    , tasty-hedgehog
     , tasty-hunit
     , text
     , transformers
-    , unliftio
     , unordered-containers
   other-modules:
     Beget.Build.DynamicTest

@@ -41,13 +41,12 @@ import Language.Haskell.TH.Syntax (Lift)
 import Language.Haskell.TH.Syntax qualified as TH
 import SomeDictOf (SomeDict, SomeDictOf (..))
 import Type.Reflection (Typeable)
-import UnliftIO (MonadUnliftIO)
 import VarArgs ((:->:))
 
 type TaskState = Static.TaskState SomeValue SomeValue
 
 newtype Build a = Build (ReaderT TaskState IO a)
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadUnliftIO)
+  deriving newtype (Functor, Applicative, Monad, MonadIO)
 
 unwrapBuild :: Build a -> (TaskState -> IO a)
 unwrapBuild (Build (ReaderT f)) = \s -> f s
