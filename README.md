@@ -16,5 +16,9 @@ A monadic, efficient, embedded build system. Features include:
 In ["Build Systems à la Carte"][bsalc] terminology, this pairs a suspending
 scheduler with constructive traces for rebuilding, similar to [Buck2][buck2].
 
+This was extracted from [another project][be2], so most of the Git history lives
+there.
+
 [bsalc]: https://www.microsoft.com/en-us/research/wp-content/uploads/2018/03/build-systems-final.pdf
 [buck2]: https://github.com/facebook/buck2
+[be2]: https://github.com/evanrelf/be2
