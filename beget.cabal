@@ -1,0 +1,95 @@
+cabal-version: 3.6
+
+name: beget
+version: 0.1.0.0
+
+common common
+  build-depends:
+    , base
+    , relude
+  mixins:
+    , base hiding (Prelude)
+    , relude (Relude as Prelude)
+    , relude
+  default-language: GHC2024
+  default-extensions:
+    , BlockArguments
+    , DeriveAnyClass
+    , DerivingVia
+    , DuplicateRecordFields
+    , NoFieldSelectors
+    , OverloadedRecordDot
+    , OverloadedStrings
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Werror=incomplete-patterns
+    -Werror=incomplete-record-updates
+    -Werror=incomplete-uni-patterns
+    -Werror=missing-fields
+    -Werror=missing-methods
+    -Werror=partial-fields
+    -Widentities
+    -Wmissing-home-modules
+    -Wno-unticked-promoted-constructors
+    -Wredundant-constraints
+
+common executable
+  ghc-options:
+    -threaded
+    -rtsopts
+    -with-rtsopts=-N
+
+library
+  import: common
+  hs-source-dirs: src
+  build-depends:
+    , ChibiHash
+    , aeson
+    , annotated-exception
+    , bytestring
+    , constraints
+    , filepath
+    , optparse-applicative
+    , resourcet
+    , serialise
+    , some-dict-of
+    , sqlite-simple
+    , string-interpolate
+    , template-haskell
+    , typed-process
+    , unliftio
+    , varargs
+    , xdg-basedir
+    , yaml
+  exposed-modules:
+    , Beget.Build
+    , Beget.Build.Dynamic
+    , Beget.Build.Static
+    , Beget.Hash
+    , Beget.Registry
+    , Beget.Trace
+    , Beget.Value
+
+test-suite test
+  import:
+    , common
+    , executable
+  type: exitcode-stdio-1.0
+  main-is: Driver.hs
+  hs-source-dirs: test
+  build-depends:
+    , annotated-exception
+    , beget
+    , hedgehog
+    , serialise
+    , sqlite-simple
+    , tasty
+    , tasty-discover
+    , tasty-hedgehog
+    , tasty-hunit
+    , unliftio
+  other-modules:
+    Beget.Build.DynamicTest
+    Beget.Build.StaticTest
+    Beget.TraceTest
