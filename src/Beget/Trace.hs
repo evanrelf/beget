@@ -13,10 +13,16 @@ import Beget.Hash (BegetHash (..), begetHash)
 import Beget.Value (Value)
 import Codec.Serialise (Serialise, deserialise, serialise)
 import Control.Exception (assert)
+import Control.Monad.IO.Class (MonadIO (..))
+import Data.ByteString.Lazy (LazyByteString)
+import Data.Foldable (for_)
+import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
+import Data.Int (Int64)
 import Data.String.Interpolate (iii)
+import Data.Traversable (for)
 import Database.SQLite.Simple qualified as SQLite
-import Prelude hiding (trace, traceId)
+import GHC.Generics (Generic)
 import UnliftIO.Exception (onException)
 
 data Trace k v = Trace
@@ -80,7 +86,7 @@ fetchTraces
   :: (Value k, Value v, MonadIO m)
   => SQLite.Connection -> Maybe k -> m [Trace k v]
 fetchTraces connection mKey = liftIO do
-  traceRows :: [(Int64, LByteString, LByteString, LByteString)] <-
+  traceRows :: [(Int64, LazyByteString, LazyByteString, LazyByteString)] <-
     case mKey of
       Just key -> do
         let keyBytes = serialise key
@@ -93,24 +99,25 @@ fetchTraces connection mKey = liftIO do
           connection
           "select id, key, value, trace_hash from traces"
 
-  forM traceRows \traceRow -> do
+  for traceRows \traceRow -> do
     let (traceId, traceKeyBytes, traceValueBytes, traceHashBytes) = traceRow
 
     let traceKey = deserialise traceKeyBytes
 
-    whenJust mKey \key ->
-      assert (key == traceKey) $ pure ()
+    case mKey of
+      Just key -> assert (key == traceKey) $ pure ()
+      Nothing -> pure ()
 
     let traceValue = deserialise traceValueBytes
 
-    depsRows :: [(LByteString, LByteString)] <-
+    depsRows :: [(LazyByteString, LazyByteString)] <-
       SQLite.query
         connection
         "select dep_key, dep_value_hash from trace_deps where trace_id = ?"
         (SQLite.Only traceId)
 
     deps :: [(k, BegetHash)] <-
-      forM depsRows \(depKeyBytes, depValueHashBytes) -> do
+      for depsRows \(depKeyBytes, depValueHashBytes) -> do
         let depKey = deserialise depKeyBytes
         let depValueHash = deserialise depValueHashBytes
         pure (depKey, depValueHash)

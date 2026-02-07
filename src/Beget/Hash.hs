@@ -8,6 +8,8 @@ where
 
 import ChibiHash (chibihash64)
 import Codec.Serialise (Serialise, serialise)
+import Data.ByteString qualified as ByteString
+import Data.Word (Word64)
 
 newtype BegetHash = BegetHash Word64
   deriving stock (Show)
@@ -18,4 +20,4 @@ class BegetHashable a where
 
 instance {-# OVERLAPPABLE #-} Serialise a => BegetHashable a where
   begetHash :: a -> BegetHash
-  begetHash x = BegetHash (chibihash64 (toStrict (serialise x)) 0)
+  begetHash x = BegetHash (chibihash64 (ByteString.toStrict (serialise x)) 0)

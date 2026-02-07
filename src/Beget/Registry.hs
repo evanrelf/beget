@@ -14,13 +14,18 @@ module Beget.Registry
   )
 where
 
+import Control.Monad (when)
 import Data.Constraint (Class (..), Dict (..), (:-) (..))
+import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
+import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
+import Data.Kind (Constraint)
+import Data.Proxy (Proxy (..))
 import Language.Haskell.TH qualified as TH
 import Language.Haskell.TH.Syntax qualified as TH
 import SomeDictOf (SomeDict, SomeDictOf (..))
 import System.IO.Unsafe (unsafePerformIO)
-import Type.Reflection (SomeTypeRep, TypeRep, (:~~:) (..), eqTypeRep, someTypeRep, typeRep, typeRepTyCon, tyConName)
+import Type.Reflection (SomeTypeRep, Typeable, TypeRep, (:~~:) (..), eqTypeRep, someTypeRep, typeRep, typeRepTyCon, tyConName)
 
 type Registry = HashMap SomeTypeRep SomeInstances
 

@@ -15,9 +15,11 @@ import Beget.Registry (lookupInstance)
 import Codec.Serialise (Serialise (..))
 import Codec.Serialise.Decoding (decodeListLenOf)
 import Data.Constraint (Class (..), Dict (..), (:-) (..))
+import Data.Hashable (Hashable, hashWithSalt)
+import Data.Maybe (fromMaybe)
+import Data.Proxy (Proxy (..))
 import SomeDictOf (SomeDictOf (..))
-import Text.Show (showsPrec)
-import Type.Reflection (TypeRep, (:~~:) (..), eqTypeRep, tyConName, typeRep, typeRepTyCon)
+import Type.Reflection (Typeable, TypeRep, (:~~:) (..), eqTypeRep, tyConName, typeRep, typeRepTyCon)
 
 class (Typeable a, Show a, Serialise a, BegetHashable a, Hashable a) => Value a
 

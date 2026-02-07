@@ -8,8 +8,16 @@ import Beget.Hash (BegetHash (..))
 import Beget.Trace (Trace (..), dbCreate, dbDrop, fetchTraces)
 import Beget.Value (Value)
 import Codec.Serialise (Serialise)
+import Control.Concurrent.STM
+import Data.ByteString (ByteString)
 import Data.HashMap.Strict qualified as HashMap
+import Data.Hashable (Hashable)
+import Data.Text (Text)
+import Data.Text qualified as Text
+import Data.Text.Encoding qualified as Text
+import Data.Traversable (for)
 import Database.SQLite.Simple qualified as SQLite
+import GHC.Generics (Generic)
 import Prelude hiding (concat, readFile)
 import Test.Tasty.HUnit
 
@@ -36,13 +44,13 @@ readFile taskState path = do
 taskReadFile :: TaskState TestKey TestValue -> FilePath -> IO ByteString
 taskReadFile _taskState path = do
   let toBytes :: Text -> ByteString
-      toBytes = encodeUtf8
+      toBytes = Text.encodeUtf8
   let bytes = case path of
         "/files" -> toBytes "/files/a\n/files/a\n/files/b\n"
         "/files/a" -> toBytes "AAAA\n"
         "/files/b" -> toBytes "BBBB\n"
         "/dev/null" -> toBytes ""
-        _ -> error $ "Failed to read file at '" <> toText path <> "'"
+        _ -> error $ "Failed to read file at '" <> path <> "'"
   pure bytes
 
 concat :: TaskState TestKey TestValue -> FilePath -> IO ByteString
@@ -56,15 +64,15 @@ concat taskState path = do
 taskConcat :: TaskState TestKey TestValue -> FilePath -> IO ByteString
 taskConcat taskState path = do
   bytes <- readFile taskState path
-  let text = decodeUtf8 bytes
-  let paths = map toString (lines text)
-  output <- foldMapM (readFile taskState) paths
+  let text = Text.decodeUtf8 bytes
+  let paths = map Text.unpack (Text.lines text)
+  output <- mconcat <$> traverse (readFile taskState) paths
   pure output
 
 unit_build_system_static :: Assertion
 unit_build_system_static = do
   let toBytes :: Text -> ByteString
-      toBytes = encodeUtf8
+      toBytes = Text.encodeUtf8
 
   SQLite.withConnection ":memory:" \connection -> do
     dbDrop connection
@@ -113,7 +121,7 @@ unit_build_system_static = do
     let expectedDone = fmap (const True) expectedStore
     actualDone <- do
       done <- readTVarIO buildState.done
-      forM done \tmvar -> do
+      for done \tmvar -> do
         isEmpty <- atomically $ isEmptyTMVar tmvar
         pure (not isEmpty)
     assertEqual "done 1" expectedDone actualDone
@@ -155,7 +163,7 @@ unit_build_system_static = do
 
     actualDone' <- do
       done <- readTVarIO buildState'.done
-      forM done \tmvar -> do
+      for done \tmvar -> do
         isEmpty <- atomically $ isEmptyTMVar tmvar
         pure (not isEmpty)
     assertEqual "done 2" expectedDone actualDone'

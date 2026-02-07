@@ -12,12 +12,19 @@ where
 import Beget.Hash (BegetHash, begetHash)
 import Beget.Trace (Trace (..), fetchTraces, insertTrace)
 import Beget.Value (Value)
-import Control.Exception (assert)
+import Control.Concurrent.MVar
+import Control.Concurrent.STM
+import Control.Exception (SomeException, assert)
 import Control.Exception.Annotated.UnliftIO qualified as Exception
+import Control.Monad (filterM, unless, void, when)
+import Control.Monad.IO.Class (MonadIO (..))
+import Data.Function ((&))
+import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
+import Data.HashSet (HashSet)
 import Data.HashSet qualified as HashSet
+import Data.Maybe (fromMaybe, isNothing)
 import Database.SQLite.Simple qualified as SQLite
-import Prelude hiding (trace)
 import UnliftIO (MonadUnliftIO)
 import UnliftIO.Async (forConcurrently_, race_)
 
@@ -106,7 +113,7 @@ buildStateFetch buildState key = do
   if| Just storeValue <- HashMap.lookup key store
     , HashSet.member storeValue matches ->
         pure (Just storeValue)
-    | Just cachedValue <- viaNonEmpty head (HashSet.toList matches) ->
+    | cachedValue : _ <- HashSet.toList matches ->
         pure (Just cachedValue)
     | otherwise ->
         pure Nothing
@@ -141,9 +148,11 @@ allConcurrently
   :: (Foldable f, MonadUnliftIO m)
   => (a -> m Bool) -> f a -> m Bool
 allConcurrently f xs = do
-  m <- newEmptyMVar
+  m <- liftIO newEmptyMVar
   forConcurrently_ xs \x ->
     race_
-      (unlessM (f x) (void (tryPutMVar m ())))
-      (readMVar m)
-  isNothing <$> tryReadMVar m
+      (unlessM (f x) (liftIO $ void (tryPutMVar m ())))
+      (liftIO $ readMVar m)
+  liftIO $ isNothing <$> tryReadMVar m
+  where
+  unlessM p m = p >>= flip unless m

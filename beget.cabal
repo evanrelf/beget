@@ -4,13 +4,7 @@ name: beget
 version: 0.1.0.0
 
 common common
-  build-depends:
-    , base
-    , relude
-  mixins:
-    , base hiding (Prelude)
-    , relude (Relude as Prelude)
-    , relude
+  build-depends: base
   default-language: GHC2024
   default-extensions:
     , BlockArguments
@@ -50,15 +44,19 @@ library
     , bytestring
     , constraints
     , filepath
+    , hashable
     , optparse-applicative
     , resourcet
     , serialise
     , some-dict-of
     , sqlite-simple
+    , stm
     , string-interpolate
     , template-haskell
+    , transformers
     , typed-process
     , unliftio
+    , unordered-containers
     , varargs
     , xdg-basedir
     , yaml
@@ -81,14 +79,20 @@ test-suite test
   build-depends:
     , annotated-exception
     , beget
+    , bytestring
+    , hashable
     , hedgehog
     , serialise
     , sqlite-simple
+    , stm
     , tasty
     , tasty-discover
     , tasty-hedgehog
     , tasty-hunit
+    , text
+    , transformers
     , unliftio
+    , unordered-containers
   other-modules:
     Beget.Build.DynamicTest
     Beget.Build.StaticTest

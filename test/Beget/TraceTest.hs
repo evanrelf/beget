@@ -6,8 +6,8 @@ import Beget.Hash (BegetHash (..))
 import Beget.Trace
 import Beget.Value (Value)
 import Data.HashMap.Strict qualified as HashMap
+import Data.Text (Text)
 import Database.SQLite.Simple qualified as SQLite
-import Prelude hiding (trace)
 import Test.Tasty.HUnit
 
 instance Value Text
