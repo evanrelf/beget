@@ -23,7 +23,6 @@
           import inputs.nixpkgs {
             localSystem = system;
             overlays = [
-              (import ./overlay.nix)
               inputs.ghciwatch-compat.overlays.default
             ];
           };
