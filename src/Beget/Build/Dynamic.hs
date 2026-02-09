@@ -26,13 +26,14 @@ import Beget.Value (SomeValue (..), Value, fromSomeValue, fromSomeValue', toSome
 import Codec.Serialise (Serialise)
 import Control.Concurrent.STM (atomically)
 import Control.Monad.IO.Class (MonadIO (..))
+import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Control.Monad.Trans.Reader (ReaderT (..), ask)
 import Data.Char (toUpper)
 import Data.Coerce (Coercible, coerce)
 import Data.Constraint (Class (..), Dict (..), (:-) (..))
 import Data.Functor.Identity (Identity (..))
-import Data.Hashable (Hashable)
 import Data.HashMap.Strict qualified as HashMap
+import Data.Hashable (Hashable)
 import Data.Kind (Constraint, Type)
 import Database.SQLite.Simple qualified as SQLite
 import GHC.Generics (Generic)
@@ -46,7 +47,7 @@ import VarArgs ((:->:))
 type TaskState = Static.TaskState SomeValue SomeValue
 
 newtype Build a = Build (ReaderT TaskState IO a)
-  deriving newtype (Functor, Applicative, Monad, MonadIO)
+  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadUnliftIO)
 
 unwrapBuild :: Build a -> (TaskState -> IO a)
 unwrapBuild (Build (ReaderT f)) = \s -> f s

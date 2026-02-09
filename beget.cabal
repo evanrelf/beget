@@ -50,6 +50,7 @@ library
     , string-interpolate
     , template-haskell
     , transformers
+    , unliftio-core
     , unordered-containers
     , varargs
   exposed-modules:
