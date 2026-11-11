@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskellQuotes #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Beget.Build.Dynamic2Test where
 
@@ -21,13 +21,15 @@ fib = task 'fib \n ->
     then pure (toInteger n)
     else (+) <$> fib (n - 1) <*> fib (n - 2)
 
+registerTask 'fib
+
 unit_fib :: Assertion
 unit_fib =
   withDatabase ":memory:" \database -> do
     dbDrop database
     dbCreate database
 
-    let tasks = [someTask 'fib fib]
+    let tasks = $$discoverTasks
 
     result <- runBuild tasks database (fib 30)
     result @?= 832_040
@@ -44,12 +46,16 @@ readFile :: FilePath -> Build ByteString
 readFile = task 'readFile \path ->
   liftIO $ ByteString.readFile path
 
+registerTask 'readFile
+
 concat :: FilePath -> Build ByteString
 concat = task 'concat \path -> do
   bytes <- readFile path
   let text = Text.decodeUtf8 bytes
   let paths = map Text.unpack (Text.lines text)
   mconcat <$> traverse readFile paths
+
+registerTask 'concat
 
 unit_volatile :: Assertion
 unit_volatile =
@@ -58,10 +64,7 @@ unit_volatile =
     dbDrop database
     dbCreate database
 
-    let tasks =
-          [ someTask 'readFile readFile
-          , someTask 'concat concat
-          ]
+    let tasks = $$discoverTasks
 
     let write name contents = do
           ByteString.writeFile (dir </> name) (Text.encodeUtf8 contents)
