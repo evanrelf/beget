@@ -12,18 +12,17 @@ where
 import Beget.Hash (BegetHash, begetHash)
 import Beget.Trace (Trace (..), fetchTraces, insertTrace)
 import Beget.Value (Value)
-import Control.Concurrent.Async (forConcurrently_, race_)
-import Control.Concurrent.MVar
+import Control.Concurrent.Async (forConcurrently)
 import Control.Concurrent.STM
 import Control.Exception (SomeException, assert)
 import Control.Exception qualified as Exception
-import Control.Monad (filterM, unless, void, when)
+import Control.Monad (filterM, when)
 import Data.Function ((&))
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Data.HashSet (HashSet)
 import Data.HashSet qualified as HashSet
-import Data.Maybe (fromMaybe, isNothing)
+import Data.Maybe (fromMaybe)
 import Database.SQLite.Simple qualified as SQLite
 
 data BuildState k v = BuildState
@@ -142,13 +141,5 @@ taskStateRealize taskState key = do
   atomically $ modifyTVar' taskState.deps $ HashMap.insert key (begetHash value)
   pure value
 
-allConcurrently :: Foldable f => (a -> IO Bool) -> f a -> IO Bool
-allConcurrently f xs = do
-  m <- newEmptyMVar
-  forConcurrently_ xs \x ->
-    race_
-      (unlessM (f x) (void (tryPutMVar m ())))
-      (readMVar m)
-  isNothing <$> tryReadMVar m
-  where
-  unlessM p m = p >>= flip unless m
+allConcurrently :: Traversable f => (a -> IO Bool) -> f a -> IO Bool
+allConcurrently f xs = and <$> forConcurrently xs f
