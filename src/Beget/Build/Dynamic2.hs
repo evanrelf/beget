@@ -20,10 +20,12 @@ import Beget.Trace (Database)
 import Beget.Value (Value)
 import Codec.Serialise (Serialise (..), deserialise, serialise)
 import Control.Concurrent.STM (atomically)
+import Control.Monad (unless)
 import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.IO.Unlift (MonadUnliftIO (..))
 import Control.Monad.Trans.Reader (ReaderT (..), ask, local)
 import Data.ByteString (ByteString, fromStrict, toStrict)
+import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Data.Hashable (Hashable (..))
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
@@ -63,6 +65,7 @@ type TaskState = Static.TaskState TaskKey TaskValue
 
 data Env = Env
   { taskState :: TaskState
+  , handlers :: HashMap TaskName (ByteString -> Build ByteString)
     -- The key whose handler is running. Calling `task` with this key runs its
     -- body instead of realizing it (which would deadlock).
   , building :: Maybe TaskKey
@@ -90,17 +93,25 @@ runBuild tasks database (Build m) = do
   let handlers = HashMap.fromList [(t.name, t.handler) | t <- tasks]
   let runTask taskState key =
         case HashMap.lookup key.name handlers of
-          Nothing -> error $ "No handler for task `" <> show key.name <> "`"
+          Nothing -> do
+            let TaskName name = key.name
+            error $ "A cached trace depends on task `" <> show name <> "`, but it's missing from the tasks given to `runBuild`"
           Just handler -> do
             let Build action = handler key.args
             volatile <- newIORef False
-            bytes <- runReaderT action Env{ taskState, building = Just key, volatile }
+            let env = Env
+                  { taskState
+                  , handlers
+                  , building = Just key
+                  , volatile
+                  }
+            bytes <- runReaderT action env
             isVolatile <- readIORef volatile
             pure (TaskValue bytes, isVolatile)
   buildState <- atomically $ Static.newBuildState database runTask
   taskState <- atomically $ Static.newTaskState buildState
   volatile <- newIORef False
-  runReaderT m Env{ taskState, building = Nothing, volatile }
+  runReaderT m Env{ taskState, handlers, building = Nothing, volatile }
 
 data Task = Task
   { name :: TaskName
@@ -115,6 +126,8 @@ task thName f = collectArgs \args -> Build do
     let Build action = applyArgs f args
     local (\env' -> env'{ building = Nothing }) action
   else do
+    unless (HashMap.member key.name env.handlers) do
+      error $ "Task `" <> show thName <> "` is missing from the tasks given to `runBuild` (did you forget `registerTask '" <> TH.nameBase thName <> "`?)"
     TaskValue bytes <- liftIO $ Static.taskStateRealize env.taskState key
     pure $ deserialise (fromStrict bytes)
 
