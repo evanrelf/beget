@@ -25,7 +25,7 @@ import Database.SQLite.Simple qualified as SQLite
 
 data BuildState k v = BuildState
   { tasks :: TaskState k v -> k -> IO (v, Bool)
-  , connection :: SQLite.Connection
+  , connection :: TMVar SQLite.Connection
   , store :: OnceMap k v
   , debugTaskCount :: TVar Int
   }
@@ -34,7 +34,8 @@ newBuildState
   :: SQLite.Connection
   -> (TaskState k v -> k -> IO (v, Bool))
   -> STM (BuildState k v)
-newBuildState connection tasks = do
+newBuildState connection0 tasks = do
+  connection <- newTMVar connection0
   store <- OnceMap.new
   debugTaskCount <- newTVar 0
   pure BuildState{ tasks, connection, store, debugTaskCount }
@@ -50,7 +51,8 @@ buildStateRealize buildState key =
 
 buildStateFetch :: (Value k, Value v) => BuildState k v -> k -> IO (Maybe v)
 buildStateFetch buildState key = do
-  traces <- fetchTraces buildState.connection (Just key)
+  traces <- withConnection buildState \connection ->
+    fetchTraces connection (Just key)
   matches <-
     traces & filterM \trace -> do
       Exception.assert (begetHash trace.key == begetHash key) $ pure ()
@@ -67,9 +69,16 @@ buildStateBuild buildState key = do
   (value, volatile) <- buildState.tasks taskState key
   when (not volatile) do
     deps <- readTVarIO taskState.deps
-    _traceId <- insertTrace buildState.connection Trace{ key, deps, value }
+    _traceId <- withConnection buildState \connection ->
+      insertTrace connection Trace{ key, deps, value }
     pure ()
   pure value
+
+withConnection :: BuildState k v -> (SQLite.Connection -> IO a) -> IO a
+withConnection buildState =
+  Exception.bracket
+    (atomically $ takeTMVar buildState.connection)
+    (atomically . putTMVar buildState.connection)
 
 data TaskState k v = TaskState
   { buildState :: BuildState k v
