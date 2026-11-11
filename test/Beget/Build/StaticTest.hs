@@ -9,8 +9,10 @@ import Beget.OnceMap qualified as OnceMap
 import Beget.Trace (Trace (..), dbCreate, dbDrop, fetchTraces, withDatabase)
 import Beget.Value (Value)
 import Codec.Serialise (Serialise)
+import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM
 import Control.Exception (SomeException, try)
+import Control.Monad (when)
 import Data.ByteString (ByteString)
 import Data.Functor ((<&>))
 import Data.HashMap.Strict (HashMap)
@@ -192,6 +194,50 @@ unit_failed_dep_not_traced =
 
     result' <- build
     assertEqual "result 2" "/a" result'
+
+unit_stale_deps_not_realized :: Assertion
+unit_stale_deps_not_realized =
+  withDatabase ":memory:" \database -> do
+    dbDrop database
+    dbCreate database
+
+    files <- newIORef @(HashMap FilePath ByteString) $ HashMap.fromList
+      [ ("/switch", "/a")
+      , ("/a", "AAAA")
+      , ("/b", "BBBB")
+      ]
+
+    let tasks :: TaskState TestKey TestValue -> TestKey -> IO (TestValue, Bool)
+        tasks taskState = \case
+          Key_ReadFile path -> do
+            -- Give a concurrent check of `/a` time to fail first
+            when (path == "/switch") $ threadDelay 10_000
+            contents <- readIORef files
+            case HashMap.lookup path contents of
+              Just bytes -> pure (Value_ReadFile bytes, True)
+              Nothing -> error $ "No file at '" <> path <> "'"
+
+          Key_Concat path -> do
+            switch <- readFile taskState path
+            bytes <- readFile taskState (Text.unpack (Text.decodeUtf8 switch))
+            pure (Value_Concat bytes, False)
+
+    let build = do
+          buildState <- atomically $ newBuildState database tasks
+          taskState <- atomically $ newTaskState buildState
+          concat taskState "/switch"
+
+    result <- build
+    assertEqual "result 1" "AAAA" result
+
+    -- The old trace depends on `/a`, but the task no longer needs it
+    writeIORef files $ HashMap.fromList
+      [ ("/switch", "/b")
+      , ("/b", "BBBB")
+      ]
+
+    result' <- build
+    assertEqual "result 2" "BBBB" result'
 
 readStore :: BuildState k v -> IO (HashMap k (Maybe v))
 readStore buildState = do

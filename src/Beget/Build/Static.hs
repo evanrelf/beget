@@ -54,11 +54,12 @@ buildStateFetch buildState key = do
   match <-
     traces & findM \trace -> do
       Exception.assert (begetHash trace.key == begetHash key) $ pure ()
-      HashMap.toList (HashMap.unions trace.deps) & allConcurrently \(depKey, depValueHash) -> do
-        -- TODO: Wrap possible exception from failure to realize in checkpoint
-        -- indicating this unexpectedly happened during fetch.
-        depValue <- buildStateRealize buildState depKey
-        pure (depValueHash == begetHash depValue)
+      trace.deps & allM \cohort ->
+        HashMap.toList cohort & allConcurrently \(depKey, depValueHash) -> do
+          -- TODO: Wrap possible exception from failure to realize in checkpoint
+          -- indicating this unexpectedly happened during fetch.
+          depValue <- buildStateRealize buildState depKey
+          pure (depValueHash == begetHash depValue)
   pure $ fmap (.value) match
 
 buildStateBuild :: (Value k, Value v) => BuildState k v -> k -> IO v
@@ -111,6 +112,12 @@ allConcurrently f xs = do
   isNothing <$> tryReadMVar m
   where
   unlessM p m = p >>= flip unless m
+
+allM :: Monad m => (a -> m Bool) -> [a] -> m Bool
+allM _ [] = pure True
+allM p (x : xs) = p x >>= \case
+  True -> allM p xs
+  False -> pure False
 
 findM :: Monad m => (a -> m Bool) -> [a] -> m (Maybe a)
 findM _ [] = pure Nothing
