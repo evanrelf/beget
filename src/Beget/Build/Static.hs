@@ -12,17 +12,18 @@ where
 import Beget.Hash (BegetHash, begetHash)
 import Beget.Trace (Trace (..), fetchTraces, insertTrace)
 import Beget.Value (Value)
-import Control.Concurrent.Async (forConcurrently)
+import Control.Concurrent.Async (forConcurrently_, race_)
+import Control.Concurrent.MVar
 import Control.Concurrent.STM
-import Control.Exception (SomeException, assert)
+import Control.Exception (SomeException)
 import Control.Exception qualified as Exception
-import Control.Monad (filterM, when)
+import Control.Monad (filterM, unless, void, when)
 import Data.Function ((&))
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Data.HashSet (HashSet)
 import Data.HashSet qualified as HashSet
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isNothing)
 import Database.SQLite.Simple qualified as SQLite
 
 data BuildState k v = BuildState
@@ -44,7 +45,8 @@ newBuildState connection tasks = do
   pure BuildState{ tasks, connection, done, store, debugTaskCount }
 
 buildStateRealize :: (Value k, Value v) => BuildState k v -> k -> IO v
-buildStateRealize buildState key = do
+-- Masked so that once we claim a key's barrier, we always fill it.
+buildStateRealize buildState key = Exception.mask \restore -> do
   eBarrier <- atomically do
     done <- readTVar buildState.done
     case HashMap.lookup key done of
@@ -55,23 +57,26 @@ buildStateRealize buildState key = do
         pure (Left barrier)
 
   case eBarrier of
-    Right barrier -> do
+    Right barrier -> restore do
       result <- atomically $
         readTMVar barrier >>= \case
           Right () -> do
             store <- readTVar buildState.store
-            -- SAFETY: The barrier is filled only after the value is inserted into store.
-            -- Both operations happen in the same STM transaction in the builder.
+            -- SAFETY: The barrier is filled only after the value is inserted
+            -- into store. Both operations happen in the same STM transaction in
+            -- the builder.
             let value = fromMaybe (error "unreachable") (HashMap.lookup key store)
             pure (Right value)
           Left exception -> pure (Left exception)
 
       case result of
         Right value -> pure value
+        -- The builder was cancelled, so try building it ourselves.
+        Left exception | isAsyncException exception -> buildStateRealize buildState key
         Left exception -> Exception.throw exception
 
     Left barrier -> do
-      eValue <- Exception.try @SomeException do
+      eValue <- Exception.try @SomeException $ restore do
         buildStateFetch buildState key >>= \case
           Just value -> pure value
           Nothing -> do
@@ -86,9 +91,14 @@ buildStateRealize buildState key = do
           putTMVar barrier (Right ())
           pure value
         Left exception -> do
-          -- SAFETY: The key has not been marked as done yet, and no other tasks
-          -- will attempt to.
-          atomically $ putTMVar barrier (Left exception)
+          atomically do
+            -- SAFETY: The key has not been marked as done yet, and no other
+            -- tasks will attempt to.
+            putTMVar barrier (Left exception)
+            -- Being cancelled says nothing about the key, so let it be built
+            -- again.
+            when (isAsyncException exception) do
+              modifyTVar' buildState.done (HashMap.delete key)
           Exception.throw exception
 
 buildStateFetch :: (Value k, Value v) => BuildState k v -> k -> IO (Maybe v)
@@ -98,7 +108,7 @@ buildStateFetch buildState key = do
   matches :: HashSet v <-
     HashSet.fromList . map (.value) <$> do
       traces & filterM \trace -> do
-        assert (begetHash trace.key == begetHash key) $ pure ()
+        Exception.assert (begetHash trace.key == begetHash key) $ pure ()
         HashMap.toList trace.deps & allConcurrently \(depKey, depValueHash) -> do
           -- TODO: Wrap possible exception from failure to realize in checkpoint
           -- indicating this unexpectedly happened during fetch.
@@ -141,5 +151,19 @@ taskStateRealize taskState key = do
   atomically $ modifyTVar' taskState.deps $ HashMap.insert key (begetHash value)
   pure value
 
-allConcurrently :: Traversable f => (a -> IO Bool) -> f a -> IO Bool
-allConcurrently f xs = and <$> forConcurrently xs f
+allConcurrently :: Foldable f => (a -> IO Bool) -> f a -> IO Bool
+allConcurrently f xs = do
+  m <- newEmptyMVar
+  forConcurrently_ xs \x ->
+    race_
+      (unlessM (f x) (void (tryPutMVar m ())))
+      (readMVar m)
+  isNothing <$> tryReadMVar m
+  where
+  unlessM p m = p >>= flip unless m
+
+isAsyncException :: SomeException -> Bool
+isAsyncException exception =
+  case Exception.fromException exception of
+    Just (Exception.SomeAsyncException _) -> True
+    _ -> False
