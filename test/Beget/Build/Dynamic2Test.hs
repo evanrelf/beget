@@ -3,7 +3,7 @@
 module Beget.Build.Dynamic2Test where
 
 import Beget.Build.Dynamic2
-import Beget.Trace (dbCreate, dbDrop)
+import Beget.Trace (dbCreate, dbDrop, withConnection, withDatabase)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as ByteString
@@ -23,20 +23,21 @@ fib = task 'fib \n ->
 
 unit_fib :: Assertion
 unit_fib =
-  SQLite.withConnection ":memory:" \connection -> do
-    dbDrop connection
-    dbCreate connection
+  withDatabase ":memory:" \database -> do
+    dbDrop database
+    dbCreate database
 
     let tasks = [someTask 'fib fib]
 
-    result <- runBuild tasks connection (fib 30)
+    result <- runBuild tasks database (fib 30)
     result @?= 832_040
 
     -- One trace per `fib 0` through `fib 30`
-    [SQLite.Only traceCount] <- SQLite.query_ connection "select count(*) from traces"
+    [SQLite.Only traceCount] <- withConnection database \connection ->
+      SQLite.query_ connection "select count(*) from traces"
     traceCount @?= (31 :: Int)
 
-    result' <- runBuild tasks connection (fib 30)
+    result' <- runBuild tasks database (fib 30)
     result' @?= 832_040
 
 readFile :: FilePath -> Build ByteString
@@ -53,9 +54,9 @@ concat = task 'concat \path -> do
 unit_volatile :: Assertion
 unit_volatile =
   withSystemTempDirectory "beget" \dir ->
-  SQLite.withConnection ":memory:" \connection -> do
-    dbDrop connection
-    dbCreate connection
+  withDatabase ":memory:" \database -> do
+    dbDrop database
+    dbCreate database
 
     let tasks =
           [ someTask 'readFile readFile
@@ -68,16 +69,17 @@ unit_volatile =
     write "a" "AAAA\n"
     write "b" "BBBB\n"
 
-    result <- runBuild tasks connection do
+    result <- runBuild tasks database do
       concat (dir </> "files")
     result @?= "AAAA\nAAAA\nBBBB\n"
 
     -- `readFile` does IO, so only `concat` is cached
-    [SQLite.Only traceCount] <- SQLite.query_ connection "select count(*) from traces"
+    [SQLite.Only traceCount] <- withConnection database \connection ->
+      SQLite.query_ connection "select count(*) from traces"
     traceCount @?= (1 :: Int)
 
     write "b" "bbbb\n"
 
-    result' <- runBuild tasks connection do
+    result' <- runBuild tasks database do
       concat (dir </> "files")
     result' @?= "AAAA\nAAAA\nbbbb\n"

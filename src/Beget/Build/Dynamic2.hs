@@ -11,6 +11,7 @@ module Beget.Build.Dynamic2
 where
 
 import Beget.Build.Static qualified as Static
+import Beget.Trace (Database)
 import Beget.Value (Value)
 import Codec.Serialise (Serialise, deserialise, serialise)
 import Control.Concurrent.STM (atomically)
@@ -22,7 +23,6 @@ import Data.HashMap.Strict qualified as HashMap
 import Data.Hashable (Hashable)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Kind (Type)
-import Database.SQLite.Simple qualified as SQLite
 import GHC.Generics (Generic)
 import Language.Haskell.TH qualified as TH
 
@@ -69,8 +69,8 @@ instance MonadUnliftIO Build where
     liftIO $ writeIORef env.volatile True
     withRunInIO \run -> inner \(Build m) -> run m
 
-runBuild :: [Task] -> SQLite.Connection -> Build a -> IO a
-runBuild tasks connection (Build m) = do
+runBuild :: [Task] -> Database -> Build a -> IO a
+runBuild tasks database (Build m) = do
   let handlers = HashMap.fromList [(t.name, t.handler) | t <- tasks]
   let runTask taskState key =
         case HashMap.lookup key.name handlers of
@@ -81,7 +81,7 @@ runBuild tasks connection (Build m) = do
             bytes <- runReaderT action Env{ taskState, building = Just key, volatile }
             isVolatile <- readIORef volatile
             pure (TaskValue bytes, isVolatile)
-  buildState <- atomically $ Static.newBuildState connection runTask
+  buildState <- atomically $ Static.newBuildState database runTask
   taskState <- atomically $ Static.newTaskState buildState
   volatile <- newIORef False
   runReaderT m Env{ taskState, building = Nothing, volatile }

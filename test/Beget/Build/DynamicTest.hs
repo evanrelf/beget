@@ -7,7 +7,7 @@ import Beget.Build.Dynamic
 import Beget.Build.Static (BuildState (..), TaskState (..))
 import Beget.Hash (BegetHash (..))
 import Beget.OnceMap qualified as OnceMap
-import Beget.Trace (Trace (..), dbCreate, dbDrop, fetchTraces)
+import Beget.Trace (Trace (..), dbCreate, dbDrop, fetchTraces, withDatabase)
 import Beget.Value (SomeValue, Value, toSomeValue)
 import Control.Concurrent.STM
 import Control.Monad.IO.Class (MonadIO (..))
@@ -19,7 +19,6 @@ import Data.HashMap.Strict qualified as HashMap
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
-import Database.SQLite.Simple qualified as SQLite
 import Prelude hiding (concat, readFile)
 import Test.Tasty.HUnit hiding (assertEqual)
 import Test.Tasty.HUnit qualified as HUnit
@@ -55,13 +54,13 @@ unit_build_system_dynamic = do
   let toBytes :: Text -> ByteString
       toBytes = Text.encodeUtf8
 
-  SQLite.withConnection ":memory:" \connection -> do
-    dbDrop connection
-    dbCreate connection
+  withDatabase ":memory:" \database -> do
+    dbDrop database
+    dbCreate database
 
     let path = "/files"
 
-    (expectedResult, expectedStore, expectedTraces) <- runBuild connection do
+    (expectedResult, expectedStore, expectedTraces) <- runBuild database do
       taskState <- Build ask
       let buildState = taskState.buildState
 
@@ -103,7 +102,7 @@ unit_build_system_dynamic = do
                 , value = toSomeValue (ConcatValue (toBytes "AAAA\nAAAA\nBBBB\n"))
                 }
             ]
-      actualTraces :: [Trace SomeValue SomeValue] <- fetchTraces connection Nothing
+      actualTraces :: [Trace SomeValue SomeValue] <- fetchTraces database Nothing
       assertEqual "traces 1" expectedTraces actualTraces
 
       -- 3 `readFile`s, 1 `concat`
@@ -112,7 +111,7 @@ unit_build_system_dynamic = do
 
       pure (expectedResult, expectedStore, expectedTraces)
 
-    runBuild connection do
+    runBuild database do
       taskState <- Build ask
       let buildState = taskState.buildState
 
@@ -124,7 +123,7 @@ unit_build_system_dynamic = do
       actualStore' <- liftIO $ readStore buildState
       assertEqual "store 2" (Just <$> expectedStore) actualStore'
 
-      actualTraces' :: [Trace SomeValue SomeValue] <- fetchTraces connection Nothing
+      actualTraces' :: [Trace SomeValue SomeValue] <- fetchTraces database Nothing
       assertEqual "traces 2" expectedTraces actualTraces'
 
       -- ...but not run any non-volatile tasks, because they're cached.

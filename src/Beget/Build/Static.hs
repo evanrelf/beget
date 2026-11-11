@@ -10,7 +10,7 @@ where
 import Beget.Hash (BegetHash, begetHash)
 import Beget.OnceMap (OnceMap)
 import Beget.OnceMap qualified as OnceMap
-import Beget.Trace (Trace (..), fetchTraces, insertTrace)
+import Beget.Trace (Database, Trace (..), fetchTraces, insertTrace)
 import Beget.Value (Value)
 import Control.Concurrent.Async (forConcurrently_, race_)
 import Control.Concurrent.MVar
@@ -21,24 +21,22 @@ import Data.Function ((&))
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Data.Maybe (isNothing, listToMaybe)
-import Database.SQLite.Simple qualified as SQLite
 
 data BuildState k v = BuildState
   { tasks :: TaskState k v -> k -> IO (v, Bool)
-  , connection :: TMVar SQLite.Connection
+  , database :: Database
   , store :: OnceMap k v
   , debugTaskCount :: TVar Int
   }
 
 newBuildState
-  :: SQLite.Connection
+  :: Database
   -> (TaskState k v -> k -> IO (v, Bool))
   -> STM (BuildState k v)
-newBuildState connection0 tasks = do
-  connection <- newTMVar connection0
+newBuildState database tasks = do
   store <- OnceMap.new
   debugTaskCount <- newTVar 0
-  pure BuildState{ tasks, connection, store, debugTaskCount }
+  pure BuildState{ tasks, database, store, debugTaskCount }
 
 buildStateRealize :: (Value k, Value v) => BuildState k v -> k -> IO v
 buildStateRealize buildState key =
@@ -51,8 +49,7 @@ buildStateRealize buildState key =
 
 buildStateFetch :: (Value k, Value v) => BuildState k v -> k -> IO (Maybe v)
 buildStateFetch buildState key = do
-  traces <- withConnection buildState \connection ->
-    fetchTraces connection (Just key)
+  traces <- fetchTraces buildState.database (Just key)
   matches <-
     traces & filterM \trace -> do
       Exception.assert (begetHash trace.key == begetHash key) $ pure ()
@@ -69,16 +66,9 @@ buildStateBuild buildState key = do
   (value, volatile) <- buildState.tasks taskState key
   when (not volatile) do
     deps <- readTVarIO taskState.deps
-    _traceId <- withConnection buildState \connection ->
-      insertTrace connection Trace{ key, deps, value }
+    _traceId <- insertTrace buildState.database Trace{ key, deps, value }
     pure ()
   pure value
-
-withConnection :: BuildState k v -> (SQLite.Connection -> IO a) -> IO a
-withConnection buildState =
-  Exception.bracket
-    (atomically $ takeTMVar buildState.connection)
-    (atomically . putTMVar buildState.connection)
 
 data TaskState k v = TaskState
   { buildState :: BuildState k v

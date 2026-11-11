@@ -6,7 +6,7 @@ module Beget.Build.StaticTest where
 import Beget.Build.Static
 import Beget.Hash (BegetHash (..))
 import Beget.OnceMap qualified as OnceMap
-import Beget.Trace (Trace (..), dbCreate, dbDrop, fetchTraces)
+import Beget.Trace (Trace (..), dbCreate, dbDrop, fetchTraces, withDatabase)
 import Beget.Value (Value)
 import Codec.Serialise (Serialise)
 import Control.Concurrent.STM
@@ -18,7 +18,6 @@ import Data.Hashable (Hashable)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
-import Database.SQLite.Simple qualified as SQLite
 import GHC.Generics (Generic)
 import Prelude hiding (concat, readFile)
 import Test.Tasty.HUnit
@@ -76,9 +75,9 @@ unit_build_system_static = do
   let toBytes :: Text -> ByteString
       toBytes = Text.encodeUtf8
 
-  SQLite.withConnection ":memory:" \connection -> do
-    dbDrop connection
-    dbCreate connection
+  withDatabase ":memory:" \database -> do
+    dbDrop database
+    dbCreate database
 
     let tasks :: TaskState TestKey TestValue -> TestKey -> IO (TestValue, Bool)
         tasks taskState = \case
@@ -94,7 +93,7 @@ unit_build_system_static = do
             let volatile = False
             pure (value, volatile)
 
-    buildState <- atomically $ newBuildState connection tasks
+    buildState <- atomically $ newBuildState database tasks
 
     let path = "/files"
 
@@ -137,14 +136,14 @@ unit_build_system_static = do
               , value = Value_Concat (toBytes "AAAA\nAAAA\nBBBB\n")
               }
           ]
-    actualTraces :: [Trace TestKey TestValue] <- fetchTraces connection Nothing
+    actualTraces :: [Trace TestKey TestValue] <- fetchTraces database Nothing
     assertEqual "traces 1" expectedTraces actualTraces
 
     -- 3 `readFile`s, 1 `concat`
     taskCount <- readTVarIO buildState.debugTaskCount
     assertEqual "task count 1" taskCount 4
 
-    buildState' <- atomically $ newBuildState connection tasks
+    buildState' <- atomically $ newBuildState database tasks
 
     -- Second run should produce the same results...
 
@@ -155,7 +154,7 @@ unit_build_system_static = do
     actualStore' <- readStore buildState'
     assertEqual "store 2" (Just <$> expectedStore) actualStore'
 
-    actualTraces' :: [Trace TestKey TestValue] <- fetchTraces connection Nothing
+    actualTraces' :: [Trace TestKey TestValue] <- fetchTraces database Nothing
     assertEqual "traces 2" expectedTraces actualTraces'
 
     -- ...but not run any non-volatile tasks, because they're cached.

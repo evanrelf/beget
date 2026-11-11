@@ -22,6 +22,7 @@ where
 
 import Beget.Build.Static qualified as Static
 import Beget.Registry (discoverInstances, getInstances, registerInstances)
+import Beget.Trace (Database)
 import Beget.Value (SomeValue (..), Value, fromSomeValue, fromSomeValue', toSomeValue)
 import Codec.Serialise (Serialise)
 import Control.Concurrent.STM (atomically)
@@ -35,7 +36,6 @@ import Data.Functor.Identity (Identity (..))
 import Data.HashMap.Strict qualified as HashMap
 import Data.Hashable (Hashable)
 import Data.Kind (Constraint, Type)
-import Database.SQLite.Simple qualified as SQLite
 import GHC.Generics (Generic)
 import Language.Haskell.TH qualified as TH
 import Language.Haskell.TH.Syntax (Lift)
@@ -52,10 +52,10 @@ newtype Build a = Build (ReaderT TaskState IO a)
 unwrapBuild :: Build a -> (TaskState -> IO a)
 unwrapBuild (Build (ReaderT f)) = \s -> f s
 
-runBuild :: SQLite.Connection -> Build a -> IO a
-runBuild connection taskM = do
+runBuild :: Database -> Build a -> IO a
+runBuild database taskM = do
   let tasks = getTasks
-  buildState <- atomically $ Static.newBuildState connection (\taskState someKey -> unwrapBuild (tasks someKey) taskState)
+  buildState <- atomically $ Static.newBuildState database (\taskState someKey -> unwrapBuild (tasks someKey) taskState)
   taskState <- atomically $ Static.newTaskState buildState
   unwrapBuild taskM taskState
 
