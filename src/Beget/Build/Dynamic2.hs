@@ -27,6 +27,7 @@ import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.IO.Unlift (MonadUnliftIO (..))
 import Control.Monad.Trans.Reader (ReaderT (..), ask, local)
 import Data.ByteString (ByteString, fromStrict, toStrict)
+import Data.Char (isAlpha, ord)
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Data.Hashable (Hashable (..))
@@ -206,7 +207,10 @@ class IsTask (a :: Type) where
 
 registerTask :: TH.Name -> TH.Q [TH.Dec]
 registerTask thName = do
-  let typeName = TH.mkName ("Task_" <> TH.nameBase thName)
+  let base = TH.nameBase thName
+  let typeName = case base of
+        c : _ | isAlpha c || c == '_' -> TH.mkName ("Task_" <> base)
+        _ -> TH.mkName ("Task_operator" <> concatMap (\c -> "_" <> show (ord c)) base)
   instanceDecs <-
     [d|
       instance IsTask $(TH.conT typeName) where
