@@ -15,7 +15,7 @@ module Beget.Build.Dynamic
 where
 
 import Beget.Build.Static qualified as Static
-import Beget.Registry (discoverInstances)
+import Beget.Discover (discoverInstances)
 import Beget.Trace (Database)
 import Beget.Value (Value)
 import Codec.Serialise (Serialise (..), deserialise, serialise)

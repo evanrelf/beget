@@ -55,9 +55,9 @@ library
     , Beget.Build
     , Beget.Build.Dynamic
     , Beget.Build.Static
+    , Beget.Discover
     , Beget.Hash
     , Beget.OnceMap
-    , Beget.Registry
     , Beget.Trace
     , Beget.Value
 

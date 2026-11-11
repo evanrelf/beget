@@ -3,7 +3,7 @@
 
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 
-module Beget.Registry
+module Beget.Discover
   ( discoverInstances
   )
 where
