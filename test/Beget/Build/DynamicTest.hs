@@ -5,9 +5,10 @@ module Beget.Build.DynamicTest where
 
 import Beget.Build.Dynamic
 import Beget.Build.Static (BuildState (..), TaskState (..))
+import Beget.Database (dbCreate, dbDrop, withDatabase)
 import Beget.Hash (BegetHash (..))
 import Beget.OnceMap qualified as OnceMap
-import Beget.Trace (Trace (..), dbCreate, dbDrop, fetchTraces, withDatabase)
+import Beget.Trace (Trace (..), fetchTraces)
 import Beget.Value (SomeValue, Value, toSomeValue)
 import Control.Concurrent.STM
 import Control.Monad.IO.Class (MonadIO (..))

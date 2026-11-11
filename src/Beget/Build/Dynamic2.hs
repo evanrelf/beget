@@ -11,7 +11,7 @@ module Beget.Build.Dynamic2
 where
 
 import Beget.Build.Static qualified as Static
-import Beget.Trace (Database)
+import Beget.Database (Database)
 import Beget.Value (Value)
 import Codec.Serialise (Serialise, deserialise, serialise)
 import Control.Concurrent.STM (atomically)

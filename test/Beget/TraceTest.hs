@@ -2,6 +2,7 @@
 
 module Beget.TraceTest where
 
+import Beget.Database (dbCreate, dbDrop, withDatabase)
 import Beget.Hash (BegetHash (..))
 import Beget.Trace
 import Beget.Value (Value)
