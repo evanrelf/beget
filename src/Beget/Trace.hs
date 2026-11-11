@@ -29,6 +29,7 @@ import Data.String.Interpolate (iii)
 import Data.Traversable (for)
 import Database.SQLite.Simple qualified as SQLite
 import GHC.Generics (Generic)
+import System.IO (hPutStrLn, stderr)
 
 data Trace k v = Trace
   { key :: k
@@ -180,7 +181,7 @@ insertTrace database trace = withConnection database \connection -> do
         _ : _ : _ -> error "More than one row"
 
     if isDupe then do
-      putStrLn $ "warn: Trace " <> show traceId <> " already exists in database"
+      hPutStrLn stderr $ "warn: Trace " <> show traceId <> " already exists in database"
       SQLite.execute_ connection "rollback"
       pure traceId
 
