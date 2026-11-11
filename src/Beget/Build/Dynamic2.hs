@@ -15,11 +15,12 @@ import Beget.Value (Value)
 import Codec.Serialise (Serialise, deserialise, serialise)
 import Control.Concurrent.STM (atomically)
 import Control.Monad.IO.Class (MonadIO (..))
-import Control.Monad.IO.Unlift (MonadUnliftIO)
+import Control.Monad.IO.Unlift (MonadUnliftIO (..))
 import Control.Monad.Trans.Reader (ReaderT (..), ask, local)
 import Data.ByteString (ByteString, fromStrict, toStrict)
 import Data.HashMap.Strict qualified as HashMap
 import Data.Hashable (Hashable)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Kind (Type)
 import Database.SQLite.Simple qualified as SQLite
 import GHC.Generics (Generic)
@@ -49,10 +50,24 @@ data Env = Env
     -- The key whose handler is running. Calling `task` with this key runs its
     -- body instead of realizing it (which would deadlock).
   , building :: Maybe TaskKey
+    -- Set when the task does arbitrary IO, so its result isn't cached.
+  , volatile :: IORef Bool
   }
 
 newtype Build a = Build (ReaderT Env IO a)
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadUnliftIO)
+  deriving newtype (Functor, Applicative, Monad)
+
+instance MonadIO Build where
+  liftIO io = Build do
+    env <- ask
+    liftIO $ writeIORef env.volatile True
+    liftIO io
+
+instance MonadUnliftIO Build where
+  withRunInIO inner = Build do
+    env <- ask
+    liftIO $ writeIORef env.volatile True
+    withRunInIO \run -> inner \(Build m) -> run m
 
 runBuild :: [Task] -> SQLite.Connection -> Build a -> IO a
 runBuild tasks connection (Build m) = do
@@ -62,11 +77,14 @@ runBuild tasks connection (Build m) = do
           Nothing -> error $ "No handler for task `" <> show key.name <> "`"
           Just handler -> do
             let Build action = handler key.args
-            bytes <- runReaderT action Env{ taskState, building = Just key }
-            pure (TaskValue bytes, False)
+            volatile <- newIORef False
+            bytes <- runReaderT action Env{ taskState, building = Just key, volatile }
+            isVolatile <- readIORef volatile
+            pure (TaskValue bytes, isVolatile)
   buildState <- atomically $ Static.newBuildState connection runTask
   taskState <- atomically $ Static.newTaskState buildState
-  runReaderT m Env{ taskState, building = Nothing }
+  volatile <- newIORef False
+  runReaderT m Env{ taskState, building = Nothing, volatile }
 
 data Task = Task
   { name :: TaskName

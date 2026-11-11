@@ -73,6 +73,7 @@ test-suite test
   build-depends:
     , beget
     , bytestring
+    , filepath
     , hashable
     , serialise
     , sqlite-simple
@@ -80,6 +81,7 @@ test-suite test
     , tasty
     , tasty-discover
     , tasty-hunit
+    , temporary
     , text
     , transformers
     , unordered-containers

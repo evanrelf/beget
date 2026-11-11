@@ -4,7 +4,15 @@ module Beget.Build.Dynamic2Test where
 
 import Beget.Build.Dynamic2
 import Beget.Trace (dbCreate, dbDrop)
+import Control.Monad.IO.Class (MonadIO (..))
+import Data.ByteString (ByteString)
+import Data.ByteString qualified as ByteString
+import Data.Text qualified as Text
+import Data.Text.Encoding qualified as Text
 import Database.SQLite.Simple qualified as SQLite
+import Prelude hiding (concat, readFile)
+import System.FilePath ((</>))
+import System.IO.Temp (withSystemTempDirectory)
 import Test.Tasty.HUnit
 
 fib :: Int -> Build Integer
@@ -30,3 +38,46 @@ unit_fib =
 
     result' <- runBuild tasks connection (fib 30)
     result' @?= 832_040
+
+readFile :: FilePath -> Build ByteString
+readFile = task 'readFile \path ->
+  liftIO $ ByteString.readFile path
+
+concat :: FilePath -> Build ByteString
+concat = task 'concat \path -> do
+  bytes <- readFile path
+  let text = Text.decodeUtf8 bytes
+  let paths = map Text.unpack (Text.lines text)
+  mconcat <$> traverse readFile paths
+
+unit_volatile :: Assertion
+unit_volatile =
+  withSystemTempDirectory "beget" \dir ->
+  SQLite.withConnection ":memory:" \connection -> do
+    dbDrop connection
+    dbCreate connection
+
+    let tasks =
+          [ someTask 'readFile readFile
+          , someTask 'concat concat
+          ]
+
+    let write name contents = do
+          ByteString.writeFile (dir </> name) (Text.encodeUtf8 contents)
+    write "files" (Text.unlines (map Text.pack [dir </> "a", dir </> "a", dir </> "b"]))
+    write "a" "AAAA\n"
+    write "b" "BBBB\n"
+
+    result <- runBuild tasks connection do
+      concat (dir </> "files")
+    result @?= "AAAA\nAAAA\nBBBB\n"
+
+    -- `readFile` does IO, so only `concat` is cached
+    [SQLite.Only traceCount] <- SQLite.query_ connection "select count(*) from traces"
+    traceCount @?= (1 :: Int)
+
+    write "b" "bbbb\n"
+
+    result' <- runBuild tasks connection do
+      concat (dir </> "files")
+    result' @?= "AAAA\nAAAA\nbbbb\n"
