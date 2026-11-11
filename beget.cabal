@@ -52,10 +52,8 @@ library
     , transformers
     , unliftio-core
     , unordered-containers
-    , varargs
   exposed-modules:
     , Beget.Build
-    , Beget.Build.Dynamic
     , Beget.Build.Dynamic2
     , Beget.Build.Static
     , Beget.Hash
@@ -89,6 +87,5 @@ test-suite test
     , unordered-containers
   other-modules:
     Beget.Build.Dynamic2Test
-    Beget.Build.DynamicTest
     Beget.Build.StaticTest
     Beget.TraceTest
