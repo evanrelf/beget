@@ -59,6 +59,7 @@ library
     , Beget.Build.Dynamic2
     , Beget.Build.Static
     , Beget.Hash
+    , Beget.OnceMap
     , Beget.Registry
     , Beget.Trace
     , Beget.Value
@@ -71,6 +72,7 @@ test-suite test
   main-is: Driver.hs
   hs-source-dirs: test
   build-depends:
+    , async
     , beget
     , bytestring
     , filepath
