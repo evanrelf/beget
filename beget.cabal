@@ -41,7 +41,6 @@ library
     , ChibiHash
     , async
     , bytestring
-    , constraints
     , hashable
     , serialise
     , some-dict-of
