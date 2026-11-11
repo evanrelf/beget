@@ -1,8 +1,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-module Beget.Build.Dynamic2Test where
+module Beget.Build.DynamicTest where
 
-import Beget.Build.Dynamic2
+import Beget.Build.Dynamic
 import Beget.Trace (dbCreate, dbDrop, withConnection, withDatabase)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.ByteString (ByteString)

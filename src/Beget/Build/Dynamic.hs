@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Beget.Build.Dynamic2
+module Beget.Build.Dynamic
   ( Build
   , runBuild
   , Task

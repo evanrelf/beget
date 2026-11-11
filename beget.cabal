@@ -54,7 +54,7 @@ library
     , unordered-containers
   exposed-modules:
     , Beget.Build
-    , Beget.Build.Dynamic2
+    , Beget.Build.Dynamic
     , Beget.Build.Static
     , Beget.Hash
     , Beget.OnceMap
@@ -86,6 +86,6 @@ test-suite test
     , transformers
     , unordered-containers
   other-modules:
-    Beget.Build.Dynamic2Test
+    Beget.Build.DynamicTest
     Beget.Build.StaticTest
     Beget.TraceTest

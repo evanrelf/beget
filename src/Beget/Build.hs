@@ -1,6 +1,6 @@
 module Beget.Build
-  ( module Beget.Build.Dynamic2
+  ( module Beget.Build.Dynamic
   )
 where
 
-import Beget.Build.Dynamic2
+import Beget.Build.Dynamic
