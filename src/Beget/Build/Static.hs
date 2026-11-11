@@ -16,11 +16,11 @@ import Control.Concurrent.Async (forConcurrently_, race_)
 import Control.Concurrent.MVar
 import Control.Concurrent.STM
 import Control.Exception qualified as Exception
-import Control.Monad (filterM, unless, void, when)
+import Control.Monad (unless, void, when)
 import Data.Function ((&))
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
-import Data.Maybe (isNothing, listToMaybe)
+import Data.Maybe (isNothing)
 
 data BuildState k v = BuildState
   { tasks :: TaskState k v -> k -> IO (v, Bool)
@@ -50,15 +50,15 @@ buildStateRealize buildState key =
 buildStateFetch :: (Value k, Value v) => BuildState k v -> k -> IO (Maybe v)
 buildStateFetch buildState key = do
   traces <- fetchTraces buildState.database (Just key)
-  matches <-
-    traces & filterM \trace -> do
+  match <-
+    traces & findM \trace -> do
       Exception.assert (begetHash trace.key == begetHash key) $ pure ()
       HashMap.toList trace.deps & allConcurrently \(depKey, depValueHash) -> do
         -- TODO: Wrap possible exception from failure to realize in checkpoint
         -- indicating this unexpectedly happened during fetch.
         depValue <- buildStateRealize buildState depKey
         pure (depValueHash == begetHash depValue)
-  pure $ listToMaybe (map (.value) matches)
+  pure $ fmap (.value) match
 
 buildStateBuild :: (Value k, Value v) => BuildState k v -> k -> IO v
 buildStateBuild buildState key = do
@@ -100,3 +100,9 @@ allConcurrently f xs = do
   isNothing <$> tryReadMVar m
   where
   unlessM p m = p >>= flip unless m
+
+findM :: Monad m => (a -> m Bool) -> [a] -> m (Maybe a)
+findM _ [] = pure Nothing
+findM p (x : xs) = p x >>= \case
+  True -> pure (Just x)
+  False -> findM p xs
