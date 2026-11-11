@@ -20,9 +20,11 @@ import Control.Exception (assert, onException)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.ByteString.Lazy (LazyByteString)
 import Data.Foldable (for_)
+import Data.Function (on)
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Data.Int (Int64)
+import Data.List (groupBy)
 import Data.String.Interpolate (iii)
 import Data.Traversable (for)
 import Database.SQLite.Simple qualified as SQLite
@@ -30,7 +32,7 @@ import GHC.Generics (Generic)
 
 data Trace k v = Trace
   { key :: k
-  , deps :: HashMap k BegetHash
+  , deps :: [HashMap k BegetHash]
   , value :: v
   }
   deriving stock (Generic, Eq, Show)
@@ -67,6 +69,7 @@ dbCreate database = withConnection database \connection ->
     SQLite.execute_ connection [iii|
       create table trace_deps (
         trace_id integer not null references traces on delete cascade,
+        cohort integer not null,
         dep_key blob not null,
         dep_value_hash blob not null,
         unique (trace_id, dep_key)
@@ -126,23 +129,23 @@ fetchTraces database mKey = withConnection database \connection -> do
 
     let traceValue = deserialise traceValueBytes
 
-    depsRows :: [(LazyByteString, LazyByteString)] <-
+    depsRows :: [(Int, LazyByteString, LazyByteString)] <-
       SQLite.query
         connection
-        "select dep_key, dep_value_hash from trace_deps where trace_id = ?"
+        "select cohort, dep_key, dep_value_hash from trace_deps where trace_id = ? order by cohort"
         (SQLite.Only traceId)
 
-    deps :: [(k, BegetHash)] <-
-      for depsRows \(depKeyBytes, depValueHashBytes) -> do
+    deps :: [(Int, (k, BegetHash))] <-
+      for depsRows \(cohort, depKeyBytes, depValueHashBytes) -> do
         let depKey = deserialise depKeyBytes
         let depValueHash = deserialise depValueHashBytes
-        pure (depKey, depValueHash)
+        pure (cohort, (depKey, depValueHash))
 
     let traceHash = deserialise traceHashBytes
 
     let trace = Trace
           { key = traceKey
-          , deps = HashMap.fromList deps
+          , deps = map (HashMap.fromList . map snd) (groupBy ((==) `on` fst) deps)
           , value = traceValue
           }
 
@@ -182,14 +185,15 @@ insertTrace database trace = withConnection database \connection -> do
       pure traceId
 
     else do
-      for_ (HashMap.toList trace.deps) \(depKey, depValueHash) -> do
-        let depKeyBytes = serialise depKey
-        let depValueHashBytes = serialise depValueHash
+      for_ (zip [0 :: Int ..] trace.deps) \(cohort, deps) ->
+        for_ (HashMap.toList deps) \(depKey, depValueHash) -> do
+          let depKeyBytes = serialise depKey
+          let depValueHashBytes = serialise depValueHash
 
-        SQLite.execute
-          connection
-          "insert into trace_deps values (?, ?, ?)"
-          (traceId, depKeyBytes, depValueHashBytes)
+          SQLite.execute
+            connection
+            "insert into trace_deps (trace_id, cohort, dep_key, dep_value_hash) values (?, ?, ?, ?)"
+            (traceId, cohort, depKeyBytes, depValueHashBytes)
 
       SQLite.execute_ connection "commit"
 

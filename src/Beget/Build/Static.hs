@@ -20,6 +20,7 @@ import Control.Monad (unless, void, when)
 import Data.Function ((&))
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
+import Data.List (sortOn)
 import Data.Maybe (isNothing)
 
 data BuildState k v = BuildState
@@ -53,7 +54,7 @@ buildStateFetch buildState key = do
   match <-
     traces & findM \trace -> do
       Exception.assert (begetHash trace.key == begetHash key) $ pure ()
-      HashMap.toList trace.deps & allConcurrently \(depKey, depValueHash) -> do
+      HashMap.toList (HashMap.unions trace.deps) & allConcurrently \(depKey, depValueHash) -> do
         -- TODO: Wrap possible exception from failure to realize in checkpoint
         -- indicating this unexpectedly happened during fetch.
         depValue <- buildStateRealize buildState depKey
@@ -66,14 +67,21 @@ buildStateBuild buildState key = do
   (value, volatile) <- buildState.tasks taskState key
   depFailed <- readTVarIO taskState.depFailed
   when (not volatile && not depFailed) do
-    deps <- readTVarIO taskState.deps
+    depsByCohort <- readTVarIO taskState.deps
+    let deps =
+          HashMap.toList depsByCohort
+            & map (\(depKey, (cohort, depValueHash)) -> (cohort, HashMap.singleton depKey depValueHash))
+            & HashMap.fromListWith HashMap.union
+            & HashMap.toList
+            & sortOn fst
+            & map snd
     _traceId <- insertTrace buildState.database Trace{ key, deps, value }
     pure ()
   pure value
 
 data TaskState k v = TaskState
   { buildState :: BuildState k v
-  , deps :: TVar (HashMap k BegetHash)
+  , deps :: TVar (HashMap k (Int, BegetHash))
   , depFailed :: TVar Bool
   }
 
@@ -86,8 +94,11 @@ newTaskState buildState = do
 taskStateRealize :: (Value k, Value v) => TaskState k v -> k -> IO v
 taskStateRealize taskState key =
   flip Exception.onException (atomically $ writeTVar taskState.depFailed True) do
+    cohort <- HashMap.size <$> readTVarIO taskState.deps
     value <- buildStateRealize taskState.buildState key
-    atomically $ modifyTVar' taskState.deps $ HashMap.insert key (begetHash value)
+    hash <- Exception.evaluate (begetHash value)
+    let keepEarliest (cohort1, _) (cohort2, _) = (min cohort1 cohort2, hash)
+    atomically $ modifyTVar' taskState.deps $ HashMap.insertWith keepEarliest key (cohort, hash)
     pure value
 
 allConcurrently :: Foldable f => (a -> IO Bool) -> f a -> IO Bool

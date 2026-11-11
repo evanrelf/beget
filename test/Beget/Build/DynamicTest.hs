@@ -88,16 +88,10 @@ unit_build_system_dynamic = do
       let expectedTraces =
             [ Trace
                 { key = toSomeValue (ConcatKey "/files")
-                , deps = HashMap.fromList
-                    [ ( toSomeValue (ReadFileKey "/files")
-                      , BegetHash 16581488001577682600
-                      )
-                    , ( toSomeValue (ReadFileKey "/files/a")
-                      , BegetHash 16650685630470072892
-                      )
-                    , ( toSomeValue (ReadFileKey "/files/b")
-                      , BegetHash 1884633370191687281
-                      )
+                , deps =
+                    [ HashMap.singleton (toSomeValue (ReadFileKey "/files")) (BegetHash 16581488001577682600)
+                    , HashMap.singleton (toSomeValue (ReadFileKey "/files/a")) (BegetHash 16650685630470072892)
+                    , HashMap.singleton (toSomeValue (ReadFileKey "/files/b")) (BegetHash 1884633370191687281)
                     ]
                 , value = toSomeValue (ConcatValue (toBytes "AAAA\nAAAA\nBBBB\n"))
                 }

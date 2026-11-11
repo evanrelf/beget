@@ -18,7 +18,13 @@ unit_trace_roundtrip =
     dbCreate database
 
     let key = "password"
-    let deps = HashMap.singleton "answer" (BegetHash 42)
+    let deps =
+          [ HashMap.singleton "answer" (BegetHash 42)
+          , HashMap.fromList
+              [ ("question", BegetHash 6)
+              , ("everything", BegetHash 7)
+              ]
+          ]
     let value = "hunter2"
     let trace :: Trace Text Text
         trace = Trace{ key, deps, value }

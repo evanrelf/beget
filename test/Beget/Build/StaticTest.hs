@@ -124,16 +124,10 @@ unit_build_system_static = do
     let expectedTraces =
           [ Trace
               { key = Key_Concat "/files"
-              , deps = HashMap.fromList
-                  [ ( Key_ReadFile "/files"
-                    , BegetHash 217649648357837811
-                    )
-                  , ( Key_ReadFile "/files/a"
-                    , BegetHash 7664945061632064206
-                    )
-                  , ( Key_ReadFile "/files/b"
-                    , BegetHash 2092587128809980294
-                    )
+              , deps =
+                  [ HashMap.singleton (Key_ReadFile "/files") (BegetHash 217649648357837811)
+                  , HashMap.singleton (Key_ReadFile "/files/a") (BegetHash 7664945061632064206)
+                  , HashMap.singleton (Key_ReadFile "/files/b") (BegetHash 2092587128809980294)
                   ]
               , value = Value_Concat (toBytes "AAAA\nAAAA\nBBBB\n")
               }
