@@ -64,7 +64,8 @@ buildStateBuild :: (Value k, Value v) => BuildState k v -> k -> IO v
 buildStateBuild buildState key = do
   taskState <- atomically $ newTaskState buildState
   (value, volatile) <- buildState.tasks taskState key
-  when (not volatile) do
+  depFailed <- readTVarIO taskState.depFailed
+  when (not volatile && not depFailed) do
     deps <- readTVarIO taskState.deps
     _traceId <- insertTrace buildState.database Trace{ key, deps, value }
     pure ()
@@ -73,18 +74,21 @@ buildStateBuild buildState key = do
 data TaskState k v = TaskState
   { buildState :: BuildState k v
   , deps :: TVar (HashMap k BegetHash)
+  , depFailed :: TVar Bool
   }
 
 newTaskState :: BuildState k v -> STM (TaskState k v)
 newTaskState buildState = do
   deps <- newTVar HashMap.empty
-  pure TaskState{ buildState, deps }
+  depFailed <- newTVar False
+  pure TaskState{ buildState, deps, depFailed }
 
 taskStateRealize :: (Value k, Value v) => TaskState k v -> k -> IO v
-taskStateRealize taskState key = do
-  value <- buildStateRealize taskState.buildState key
-  atomically $ modifyTVar' taskState.deps $ HashMap.insert key (begetHash value)
-  pure value
+taskStateRealize taskState key =
+  flip Exception.onException (atomically $ writeTVar taskState.depFailed True) do
+    value <- buildStateRealize taskState.buildState key
+    atomically $ modifyTVar' taskState.deps $ HashMap.insert key (begetHash value)
+    pure value
 
 allConcurrently :: Foldable f => (a -> IO Bool) -> f a -> IO Bool
 allConcurrently f xs = do

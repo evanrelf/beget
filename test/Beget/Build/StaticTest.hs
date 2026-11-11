@@ -10,11 +10,13 @@ import Beget.Trace (Trace (..), dbCreate, dbDrop, fetchTraces, withDatabase)
 import Beget.Value (Value)
 import Codec.Serialise (Serialise)
 import Control.Concurrent.STM
+import Control.Exception (SomeException, try)
 import Data.ByteString (ByteString)
 import Data.Functor ((<&>))
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Data.Hashable (Hashable)
+import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
@@ -163,6 +165,39 @@ unit_build_system_static = do
     assertEqual "task count 2" taskCount' 3
 
     pure ()
+
+unit_failed_dep_not_traced :: Assertion
+unit_failed_dep_not_traced =
+  withDatabase ":memory:" \database -> do
+    dbDrop database
+    dbCreate database
+
+    exists <- newIORef False
+
+    let tasks :: TaskState TestKey TestValue -> TestKey -> IO (TestValue, Bool)
+        tasks taskState = \case
+          Key_ReadFile path ->
+            readIORef exists >>= \case
+              True -> pure (Value_ReadFile (Text.encodeUtf8 (Text.pack path)), True)
+              False -> error $ "No file at '" <> path <> "'"
+
+          Key_Concat path -> do
+            result <- try @SomeException (readFile taskState path)
+            let bytes = either (const "fallback") id result
+            pure (Value_Concat bytes, False)
+
+    let build = do
+          buildState <- atomically $ newBuildState database tasks
+          taskState <- atomically $ newTaskState buildState
+          concat taskState "/a"
+
+    result <- build
+    assertEqual "result 1" "fallback" result
+
+    writeIORef exists True
+
+    result' <- build
+    assertEqual "result 2" "/a" result'
 
 readStore :: BuildState k v -> IO (HashMap k (Maybe v))
 readStore buildState = do
