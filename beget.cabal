@@ -84,6 +84,7 @@ test-suite test
     , transformers
     , unordered-containers
   other-modules:
+    Beget.Build.Dynamic2Test
     Beget.Build.DynamicTest
     Beget.Build.StaticTest
     Beget.TraceTest
