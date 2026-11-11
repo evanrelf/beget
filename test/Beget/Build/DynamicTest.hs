@@ -6,17 +6,19 @@ module Beget.Build.DynamicTest where
 import Beget.Build.Dynamic
 import Beget.Build.Static (BuildState (..), TaskState (..))
 import Beget.Hash (BegetHash (..))
+import Beget.OnceMap qualified as OnceMap
 import Beget.Trace (Trace (..), dbCreate, dbDrop, fetchTraces)
 import Beget.Value (SomeValue, Value, toSomeValue)
 import Control.Concurrent.STM
 import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Trans.Reader (ask)
 import Data.ByteString (ByteString)
+import Data.Functor ((<&>))
+import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
-import Data.Traversable (for)
 import Database.SQLite.Simple qualified as SQLite
 import Prelude hiding (concat, readFile)
 import Test.Tasty.HUnit hiding (assertEqual)
@@ -59,7 +61,7 @@ unit_build_system_dynamic = do
 
     let path = "/files"
 
-    (expectedResult, expectedStore, expectedDone, expectedTraces) <- runBuild connection do
+    (expectedResult, expectedStore, expectedTraces) <- runBuild connection do
       taskState <- Build ask
       let buildState = taskState.buildState
 
@@ -81,16 +83,8 @@ unit_build_system_dynamic = do
               , toSomeValue (ConcatValue (toBytes "AAAA\nAAAA\nBBBB\n"))
               )
             ]
-      actualStore <- liftIO $ readTVarIO buildState.store
-      assertEqual "store 1" expectedStore actualStore
-
-      let expectedDone = fmap (const True) expectedStore
-      actualDone <- do
-        done <- liftIO $ readTVarIO buildState.done
-        for done \tmvar -> do
-          isEmpty <- liftIO $ atomically $ isEmptyTMVar tmvar
-          pure (not isEmpty)
-      assertEqual "done 1" expectedDone actualDone
+      actualStore <- liftIO $ readStore buildState
+      assertEqual "store 1" (Just <$> expectedStore) actualStore
 
       let expectedTraces =
             [ Trace
@@ -116,7 +110,7 @@ unit_build_system_dynamic = do
       taskCount <- liftIO $ readTVarIO buildState.debugTaskCount
       assertEqual "task count 1" taskCount 4
 
-      pure (expectedResult, expectedStore, expectedDone, expectedTraces)
+      pure (expectedResult, expectedStore, expectedTraces)
 
     runBuild connection do
       taskState <- Build ask
@@ -127,15 +121,8 @@ unit_build_system_dynamic = do
       actualResult' <- realize Concat path
       assertEqual "result 2" expectedResult actualResult'
 
-      actualStore' <- liftIO $ readTVarIO buildState.store
-      assertEqual "store 2" expectedStore actualStore'
-
-      actualDone' <- do
-        done <- liftIO $ readTVarIO buildState.done
-        for done \tmvar -> do
-          isEmpty <- liftIO $ atomically $ isEmptyTMVar tmvar
-          pure (not isEmpty)
-      assertEqual "done 2" expectedDone actualDone'
+      actualStore' <- liftIO $ readStore buildState
+      assertEqual "store 2" (Just <$> expectedStore) actualStore'
 
       actualTraces' :: [Trace SomeValue SomeValue] <- fetchTraces connection Nothing
       assertEqual "traces 2" expectedTraces actualTraces'
@@ -149,3 +136,10 @@ unit_build_system_dynamic = do
 
 assertEqual :: (Eq a, Show a, MonadIO m) => String -> a -> a -> m ()
 assertEqual x y z = liftIO $ HUnit.assertEqual x y z
+
+readStore :: BuildState k v -> IO (HashMap k (Maybe v))
+readStore buildState = do
+  results <- atomically $ OnceMap.toHashMap buildState.store
+  pure $ results <&> \case
+    Just (OnceMap.Succeeded value) -> Just value
+    _ -> Nothing

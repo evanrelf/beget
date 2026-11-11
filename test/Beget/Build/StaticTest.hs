@@ -5,17 +5,19 @@ module Beget.Build.StaticTest where
 
 import Beget.Build.Static
 import Beget.Hash (BegetHash (..))
+import Beget.OnceMap qualified as OnceMap
 import Beget.Trace (Trace (..), dbCreate, dbDrop, fetchTraces)
 import Beget.Value (Value)
 import Codec.Serialise (Serialise)
 import Control.Concurrent.STM
 import Data.ByteString (ByteString)
+import Data.Functor ((<&>))
+import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
 import Data.Hashable (Hashable)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
-import Data.Traversable (for)
 import Database.SQLite.Simple qualified as SQLite
 import GHC.Generics (Generic)
 import Prelude hiding (concat, readFile)
@@ -115,16 +117,8 @@ unit_build_system_static = do
             , Value_Concat (toBytes "AAAA\nAAAA\nBBBB\n")
             )
           ]
-    actualStore <- readTVarIO buildState.store
-    assertEqual "store 1" expectedStore actualStore
-
-    let expectedDone = fmap (const True) expectedStore
-    actualDone <- do
-      done <- readTVarIO buildState.done
-      for done \tmvar -> do
-        isEmpty <- atomically $ isEmptyTMVar tmvar
-        pure (not isEmpty)
-    assertEqual "done 1" expectedDone actualDone
+    actualStore <- readStore buildState
+    assertEqual "store 1" (Just <$> expectedStore) actualStore
 
     let expectedTraces =
           [ Trace
@@ -158,15 +152,8 @@ unit_build_system_static = do
     actualResult' <- taskStateRealize taskState' (Key_Concat path)
     assertEqual "result 2" expectedResult actualResult'
 
-    actualStore' <- readTVarIO buildState'.store
-    assertEqual "store 2" expectedStore actualStore'
-
-    actualDone' <- do
-      done <- readTVarIO buildState'.done
-      for done \tmvar -> do
-        isEmpty <- atomically $ isEmptyTMVar tmvar
-        pure (not isEmpty)
-    assertEqual "done 2" expectedDone actualDone'
+    actualStore' <- readStore buildState'
+    assertEqual "store 2" (Just <$> expectedStore) actualStore'
 
     actualTraces' :: [Trace TestKey TestValue] <- fetchTraces connection Nothing
     assertEqual "traces 2" expectedTraces actualTraces'
@@ -177,3 +164,10 @@ unit_build_system_static = do
     assertEqual "task count 2" taskCount' 3
 
     pure ()
+
+readStore :: BuildState k v -> IO (HashMap k (Maybe v))
+readStore buildState = do
+  results <- atomically $ OnceMap.toHashMap buildState.store
+  pure $ results <&> \case
+    Just (OnceMap.Succeeded value) -> Just value
+    _ -> Nothing

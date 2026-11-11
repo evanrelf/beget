@@ -1,5 +1,3 @@
-{-# LANGUAGE MultiWayIf #-}
-
 module Beget.Build.Static
   ( BuildState (..)
   , newBuildState
@@ -10,27 +8,25 @@ module Beget.Build.Static
 where
 
 import Beget.Hash (BegetHash, begetHash)
+import Beget.OnceMap (OnceMap)
+import Beget.OnceMap qualified as OnceMap
 import Beget.Trace (Trace (..), fetchTraces, insertTrace)
 import Beget.Value (Value)
 import Control.Concurrent.Async (forConcurrently_, race_)
 import Control.Concurrent.MVar
 import Control.Concurrent.STM
-import Control.Exception (SomeException)
 import Control.Exception qualified as Exception
 import Control.Monad (filterM, unless, void, when)
 import Data.Function ((&))
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
-import Data.HashSet (HashSet)
-import Data.HashSet qualified as HashSet
-import Data.Maybe (fromMaybe, isNothing)
+import Data.Maybe (isNothing, listToMaybe)
 import Database.SQLite.Simple qualified as SQLite
 
 data BuildState k v = BuildState
   { tasks :: TaskState k v -> k -> IO (v, Bool)
   , connection :: SQLite.Connection
-  , done :: TVar (HashMap k (TMVar (Either SomeException ())))
-  , store :: TVar (HashMap k v)
+  , store :: OnceMap k v
   , debugTaskCount :: TVar Int
   }
 
@@ -39,91 +35,31 @@ newBuildState
   -> (TaskState k v -> k -> IO (v, Bool))
   -> STM (BuildState k v)
 newBuildState connection tasks = do
-  done <- newTVar HashMap.empty
-  store <- newTVar HashMap.empty
+  store <- OnceMap.new
   debugTaskCount <- newTVar 0
-  pure BuildState{ tasks, connection, done, store, debugTaskCount }
+  pure BuildState{ tasks, connection, store, debugTaskCount }
 
 buildStateRealize :: (Value k, Value v) => BuildState k v -> k -> IO v
--- Masked so that once we claim a key's barrier, we always fill it.
-buildStateRealize buildState key = Exception.mask \restore -> do
-  eBarrier <- atomically do
-    done <- readTVar buildState.done
-    case HashMap.lookup key done of
-      Just barrier -> pure (Right barrier)
+buildStateRealize buildState key =
+  OnceMap.getOrRun buildState.store key do
+    buildStateFetch buildState key >>= \case
+      Just value -> pure value
       Nothing -> do
-        barrier <- newEmptyTMVar
-        modifyTVar' buildState.done (HashMap.insert key barrier)
-        pure (Left barrier)
-
-  case eBarrier of
-    Right barrier -> restore do
-      result <- atomically $
-        readTMVar barrier >>= \case
-          Right () -> do
-            store <- readTVar buildState.store
-            -- SAFETY: The barrier is filled only after the value is inserted
-            -- into store. Both operations happen in the same STM transaction in
-            -- the builder.
-            let value = fromMaybe (error "unreachable") (HashMap.lookup key store)
-            pure (Right value)
-          Left exception -> pure (Left exception)
-
-      case result of
-        Right value -> pure value
-        -- The builder was cancelled, so try building it ourselves.
-        Left exception | isAsyncException exception -> buildStateRealize buildState key
-        Left exception -> Exception.throw exception
-
-    Left barrier -> do
-      eValue <- Exception.try @SomeException $ restore do
-        buildStateFetch buildState key >>= \case
-          Just value -> pure value
-          Nothing -> do
-            atomically $ modifyTVar' buildState.debugTaskCount (+ 1)
-            buildStateBuild buildState key
-
-      case eValue of
-        Right value -> atomically do
-          modifyTVar' buildState.store (HashMap.insert key value)
-          -- SAFETY: The key has not been marked as done yet, and no other tasks
-          -- will attempt to.
-          putTMVar barrier (Right ())
-          pure value
-        Left exception -> do
-          atomically do
-            -- SAFETY: The key has not been marked as done yet, and no other
-            -- tasks will attempt to.
-            putTMVar barrier (Left exception)
-            -- Being cancelled says nothing about the key, so let it be built
-            -- again.
-            when (isAsyncException exception) do
-              modifyTVar' buildState.done (HashMap.delete key)
-          Exception.throw exception
+        atomically $ modifyTVar' buildState.debugTaskCount (+ 1)
+        buildStateBuild buildState key
 
 buildStateFetch :: (Value k, Value v) => BuildState k v -> k -> IO (Maybe v)
 buildStateFetch buildState key = do
   traces <- fetchTraces buildState.connection (Just key)
-
-  matches :: HashSet v <-
-    HashSet.fromList . map (.value) <$> do
-      traces & filterM \trace -> do
-        Exception.assert (begetHash trace.key == begetHash key) $ pure ()
-        HashMap.toList trace.deps & allConcurrently \(depKey, depValueHash) -> do
-          -- TODO: Wrap possible exception from failure to realize in checkpoint
-          -- indicating this unexpectedly happened during fetch.
-          depValue <- buildStateRealize buildState depKey
-          pure (depValueHash == begetHash depValue)
-
-  store <- readTVarIO buildState.store
-
-  if| Just storeValue <- HashMap.lookup key store
-    , HashSet.member storeValue matches ->
-        pure (Just storeValue)
-    | cachedValue : _ <- HashSet.toList matches ->
-        pure (Just cachedValue)
-    | otherwise ->
-        pure Nothing
+  matches <-
+    traces & filterM \trace -> do
+      Exception.assert (begetHash trace.key == begetHash key) $ pure ()
+      HashMap.toList trace.deps & allConcurrently \(depKey, depValueHash) -> do
+        -- TODO: Wrap possible exception from failure to realize in checkpoint
+        -- indicating this unexpectedly happened during fetch.
+        depValue <- buildStateRealize buildState depKey
+        pure (depValueHash == begetHash depValue)
+  pure $ listToMaybe (map (.value) matches)
 
 buildStateBuild :: (Value k, Value v) => BuildState k v -> k -> IO v
 buildStateBuild buildState key = do
@@ -161,9 +97,3 @@ allConcurrently f xs = do
   isNothing <$> tryReadMVar m
   where
   unlessM p m = p >>= flip unless m
-
-isAsyncException :: SomeException -> Bool
-isAsyncException exception =
-  case Exception.fromException exception of
-    Just (Exception.SomeAsyncException _) -> True
-    _ -> False
