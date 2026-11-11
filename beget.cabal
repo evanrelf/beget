@@ -69,7 +69,6 @@ test-suite test
   main-is: Driver.hs
   hs-source-dirs: test
   build-depends:
-    , async
     , beget
     , bytestring
     , filepath
@@ -82,7 +81,6 @@ test-suite test
     , tasty-hunit
     , temporary
     , text
-    , transformers
     , unordered-containers
   other-modules:
     Beget.Build.DynamicTest
