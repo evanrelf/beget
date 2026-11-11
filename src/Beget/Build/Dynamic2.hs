@@ -88,12 +88,16 @@ newtype Build a = Build (ReaderT Env IO a)
 instance MonadIO Build where
   liftIO io = Build do
     env <- ask
+    when env.probing do
+      liftIO $ Exception.throwIO NotATask
     liftIO $ writeIORef env.volatile True
     liftIO io
 
 instance MonadUnliftIO Build where
   withRunInIO inner = Build do
     env <- ask
+    when env.probing do
+      liftIO $ Exception.throwIO NotATask
     liftIO $ writeIORef env.volatile True
     withRunInIO \run -> inner \(Build m) -> run m
 
@@ -115,6 +119,9 @@ runBuild tasks database (Build m) = do
       Left (Probed actual callSite) | actual == expected -> pure (t.name, callSite)
       Left (Probed actual _) ->
         error $ "Task `" <> show expected <> "` is defined with `task '" <> TH.nameBase actual <> "` instead of `task '" <> TH.nameBase expected <> "`"
+      Left NotATask -> do
+        let base = TH.nameBase expected
+        error $ "Task `" <> show expected <> "` must be defined like `" <> base <> " = task '" <> base <> " ...`"
       Right void -> absurd void
   let handlers = HashMap.fromList [(t.name, t.handler) | t <- tasks]
   let runTask taskState key =
@@ -152,7 +159,9 @@ data Task = Task
   , probe :: Build Void
   }
 
-data Probed = Probed TH.Name (Maybe SrcLoc)
+data ProbeException
+  = Probed TH.Name (Maybe SrcLoc)
+  | NotATask
   deriving stock (Show)
   deriving anyclass (Exception)
 
@@ -184,11 +193,8 @@ someTask thName f =
     , handler = \bytes ->
         toStrict . serialise <$> applyArgs f (deserialise (fromStrict bytes))
     , probe = do
-        let base = TH.nameBase thName
-        let notATask :: a
-            notATask = error $ "Task `" <> show thName <> "` must be defined like `" <> base <> " = task '" <> base <> " ...`"
-        _ <- applyArgs f notATask
-        notATask
+        _ <- applyArgs f (Exception.throw NotATask)
+        Exception.throw NotATask
     }
 
 class IsTask (a :: Type) where
