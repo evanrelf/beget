@@ -166,6 +166,8 @@ data ProbeException
   deriving anyclass (Exception)
 
 task :: (HasCallStack, TaskFn f) => TH.Name -> f -> f
+task thName _ | Nothing <- TH.namePackage thName =
+  error $ "Task name `" <> show thName <> "` must be a quoted top-level function, like `'" <> TH.nameBase thName <> "`"
 task thName f = collectArgs \args -> Build do
   env <- ask
   let callSite = snd <$> listToMaybe (getCallStack callStack)
@@ -187,6 +189,8 @@ task thName f = collectArgs \args -> Build do
     pure $ deserialise (fromStrict bytes)
 
 someTask :: TaskFn f => TH.Name -> f -> Task
+someTask thName _ | Nothing <- TH.namePackage thName =
+  error $ "Task name `" <> show thName <> "` must be a quoted top-level function, like `'" <> TH.nameBase thName <> "`"
 someTask thName f =
   Task
     { name = TaskName thName
