@@ -3,7 +3,7 @@
 module Beget.Build.Dynamic2Test where
 
 import Beget.Build.Dynamic2
-import Beget.Database (dbCreate, dbDrop, withConnection, withDatabase)
+import Beget.Trace (dbCreate, dbDrop, withConnection, withDatabase)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as ByteString

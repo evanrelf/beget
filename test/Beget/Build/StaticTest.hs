@@ -4,10 +4,9 @@
 module Beget.Build.StaticTest where
 
 import Beget.Build.Static
-import Beget.Database (dbCreate, dbDrop, withDatabase)
 import Beget.Hash (BegetHash (..))
 import Beget.OnceMap qualified as OnceMap
-import Beget.Trace (Trace (..), fetchTraces)
+import Beget.Trace (Trace (..), dbCreate, dbDrop, fetchTraces, withDatabase)
 import Beget.Value (Value)
 import Codec.Serialise (Serialise)
 import Control.Concurrent.STM

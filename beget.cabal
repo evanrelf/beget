@@ -58,7 +58,6 @@ library
     , Beget.Build.Dynamic
     , Beget.Build.Dynamic2
     , Beget.Build.Static
-    , Beget.Database
     , Beget.Hash
     , Beget.OnceMap
     , Beget.Registry

@@ -7,11 +7,10 @@ module Beget.Build.Static
   )
 where
 
-import Beget.Database (Database)
 import Beget.Hash (BegetHash, begetHash)
 import Beget.OnceMap (OnceMap)
 import Beget.OnceMap qualified as OnceMap
-import Beget.Trace (Trace (..), fetchTraces, insertTrace)
+import Beget.Trace (Database, Trace (..), fetchTraces, insertTrace)
 import Beget.Value (Value)
 import Control.Concurrent.Async (forConcurrently_, race_)
 import Control.Concurrent.MVar
